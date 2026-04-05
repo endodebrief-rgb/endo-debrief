@@ -1,0 +1,124 @@
+name: 🚀 Endo Debrief — Publish Videos
+
+on:
+  # Manuel uniquement — déclenché par le Dr Dabi après validation
+  workflow_dispatch:
+    inputs:
+      manifest_run_number:
+        description: "Numéro du run de génération (ex: 42)"
+        required: true
+        type: string
+      confirm:
+        description: "Confirmer la publication (écrire 'PUBLISH')"
+        required: true
+        type: string
+
+jobs:
+  validate_input:
+    name: Validate confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "PUBLISH" ]; then
+            echo "❌ Confirmation required: type 'PUBLISH' to proceed"
+            exit 1
+          fi
+          echo "✅ Confirmation valid"
+
+  publish:
+    name: Publish to all platforms
+    runs-on: ubuntu-latest
+    needs: validate_input
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Télécharger les artifacts du run de génération
+      - name: Download videos from generation run
+        uses: actions/download-artifact@v4
+        with:
+          name: endo-debrief-videos-${{ github.event.inputs.manifest_run_number }}
+          path: output/
+
+      - name: Find review manifest
+        id: find_manifest
+        run: |
+          MANIFEST=$(find output -name "review_manifest.json" | head -1)
+          if [ -z "$MANIFEST" ]; then
+            echo "❌ review_manifest.json not found in artifacts"
+            exit 1
+          fi
+          echo "manifest_path=$MANIFEST" >> $GITHUB_OUTPUT
+          echo "✅ Found manifest: $MANIFEST"
+
+      # Variables d'environnement pour les APIs de publication
+      - name: Set publishing credentials
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+          echo "YOUTUBE_CLIENT_ID=${{ secrets.YOUTUBE_CLIENT_ID }}" >> $GITHUB_ENV
+          echo "YOUTUBE_CLIENT_SECRET=${{ secrets.YOUTUBE_CLIENT_SECRET }}" >> $GITHUB_ENV
+          echo "YOUTUBE_REFRESH_TOKEN=${{ secrets.YOUTUBE_REFRESH_TOKEN }}" >> $GITHUB_ENV
+          echo "META_APP_ID=${{ secrets.META_APP_ID }}" >> $GITHUB_ENV
+          echo "META_APP_SECRET=${{ secrets.META_APP_SECRET }}" >> $GITHUB_ENV
+          echo "META_PAGE_ACCESS_TOKEN=${{ secrets.META_PAGE_ACCESS_TOKEN }}" >> $GITHUB_ENV
+          echo "META_INSTAGRAM_USER_ID=${{ secrets.META_INSTAGRAM_USER_ID }}" >> $GITHUB_ENV
+          echo "META_FACEBOOK_PAGE_ID=${{ secrets.META_FACEBOOK_PAGE_ID }}" >> $GITHUB_ENV
+          echo "TIKTOK_ACCESS_TOKEN=${{ secrets.TIKTOK_ACCESS_TOKEN }}" >> $GITHUB_ENV
+          echo "TIKTOK_OPEN_ID=${{ secrets.TIKTOK_OPEN_ID }}" >> $GITHUB_ENV
+          echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}" >> $GITHUB_ENV
+          echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}" >> $GITHUB_ENV
+
+      - name: Run publish pipeline
+        run: |
+          python -m endo_debrief.pipeline publish \
+            --manifest "${{ steps.find_manifest.outputs.manifest_path }}"
+
+      - name: Upload publish results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: publish-results-${{ github.run_number }}
+          path: output/**/publish_results.json
+          retention-days: 30
+
+      - name: Create publish summary
+        if: always()
+        run: |
+          echo "## 🚀 Endo Debrief — Publish Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Published at:** $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Generated in run:** #${{ github.event.inputs.manifest_run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          RESULTS=$(find output -name "publish_results.json" | head -1)
+          if [ -f "$RESULTS" ]; then
+            echo "### Published URLs" >> $GITHUB_STEP_SUMMARY
+            python3 -c "
+          import json
+          with open('$RESULTS') as f:
+              r = json.load(f)
+          for key, data in r.items():
+              print(f'**{key}**')
+              if 'youtube' in data:
+                  print(f'- YouTube: {data[\"youtube\"].get(\"url\", \"\")}')
+              if 'instagram' in data:
+                  print(f'- Instagram: media_id={data[\"instagram\"].get(\"media_id\", \"\")}')
+              if 'tiktok' in data:
+                  print(f'- TikTok: {data[\"tiktok\"].get(\"publish_id\", \"\")}')
+              if 'facebook' in data:
+                  print(f'- Facebook: {data[\"facebook\"].get(\"url\", \"\")}')
+              print()
+          " >> $GITHUB_STEP_SUMMARY
+          fi

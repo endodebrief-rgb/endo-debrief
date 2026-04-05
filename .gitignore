@@ -1,0 +1,40 @@
+# Secrets — NE JAMAIS committer
+.env
+client_secrets.json
+*.token
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Outputs (trop volumineux pour git)
+output/
+*.mp4
+*.mp3
+*.png
+*.jpg
+*.jpeg
+!assets/**
+
+# PDFs des articles (droits d'auteur — ne jamais committer)
+pdf_uploads/*.pdf
+!pdf_uploads/README.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

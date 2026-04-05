@@ -1,0 +1,121 @@
+name: 🔬 Endo Debrief — Weekly Generation
+
+on:
+  # Automatique : chaque lundi à 6h00 UTC
+  schedule:
+    - cron: "0 6 * * 1"
+
+  # Manuel : déclencher depuis l'onglet Actions de GitHub
+  workflow_dispatch:
+    inputs:
+      week:
+        description: "Semaine cible (ex: 2026-W14, vide = semaine courante)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run (ne génère pas les vidéos ni l'email)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+jobs:
+  generate:
+    name: Generate 3 videos
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      # ── Récupérer le code ─────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Python ────────────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ── FFmpeg (requis par MoviePy) ───────────────────────────────────────
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      # ── Dépendances Python ────────────────────────────────────────────────
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ── Variables d'environnement depuis GitHub Secrets ───────────────────
+      - name: Set environment variables
+        run: |
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_ENV
+          echo "ELEVENLABS_API_KEY=${{ secrets.ELEVENLABS_API_KEY }}" >> $GITHUB_ENV
+          echo "ELEVENLABS_VOICE_ID=${{ secrets.ELEVENLABS_VOICE_ID }}" >> $GITHUB_ENV
+          echo "NCBI_API_KEY=${{ secrets.NCBI_API_KEY }}" >> $GITHUB_ENV
+          echo "SMTP_EMAIL=${{ secrets.SMTP_EMAIL }}" >> $GITHUB_ENV
+          echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}" >> $GITHUB_ENV
+          echo "REVIEW_EMAIL=${{ secrets.REVIEW_EMAIL }}" >> $GITHUB_ENV
+
+      # ── Lancer le pipeline de génération ─────────────────────────────────
+      - name: Run generation pipeline
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.week }}" ]; then
+            ARGS="--week ${{ github.event.inputs.week }}"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python -m endo_debrief.pipeline generate $ARGS
+
+      # ── Sauvegarder les vidéos comme artifacts (téléchargeables depuis GitHub) ─
+      - name: Upload videos as artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: endo-debrief-videos-${{ github.run_number }}
+          path: |
+            output/
+          retention-days: 7     # Disponibles pendant 7 jours
+          compression-level: 0  # Pas de compression pour les vidéos MP4
+
+      # ── Sauvegarder aussi le manifeste séparément pour faciliter l'accès ─
+      - name: Upload review manifest
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review-manifest-${{ github.run_number }}
+          path: output/**/review_manifest.json
+          retention-days: 14
+
+      # ── Résumé dans GitHub ─────────────────────────────────────────────────
+      - name: Create job summary
+        if: always()
+        run: |
+          echo "## 🔬 Endo Debrief — Generation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f output/*/review_manifest.json ]; then
+            MANIFEST=$(ls output/*/review_manifest.json | head -1)
+            echo "### Videos generated" >> $GITHUB_STEP_SUMMARY
+            python3 -c "
+          import json
+          with open('$MANIFEST') as f:
+              m = json.load(f)
+          for v in m.get('videos', []):
+              print(f\"- **Video #{v['index']}**: {v['youtube']['title'][:80]}\")
+              print(f\"  - PMID: [{v['pmid']}]({v['pubmed_url']})\")
+              print(f\"  - Journal: {v['journal']}\")
+              print()
+          " >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "### Next steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download artifacts from this run" >> $GITHUB_STEP_SUMMARY
+          echo "2. Review videos and scripts" >> $GITHUB_STEP_SUMMARY
+          echo "3. Trigger the [Publish workflow](../../actions/workflows/publish.yml) when ready" >> $GITHUB_STEP_SUMMARY
