@@ -21,6 +21,7 @@ class ContentType(Enum):
     RESEARCH_ARTICLE = "research_article"
     GUIDELINE        = "guideline"
     CLINICAL_TRIAL   = "clinical_trial"
+    FLASHBACK        = "flashback"      # Article historique fondateur, très cité
 
 
 class TrialStatus(Enum):
@@ -69,6 +70,7 @@ class ContentItem:
             ContentType.RESEARCH_ARTICLE: "Research Article",
             ContentType.GUIDELINE:        "Clinical Guideline",
             ContentType.CLINICAL_TRIAL:   "Clinical Trial",
+            ContentType.FLASHBACK:        "Flashback — Landmark Study",
         }
         return labels.get(self.content_type, "Unknown")
 
@@ -78,6 +80,7 @@ class ContentItem:
             ContentType.RESEARCH_ARTICLE: "🔬",
             ContentType.GUIDELINE:        "📋",
             ContentType.CLINICAL_TRIAL:   "🧪",
+            ContentType.FLASHBACK:        "🕰️",
         }
         return emojis.get(self.content_type, "📄")
 
@@ -105,6 +108,7 @@ class ScoredContentItem:
     total_score: float
     summary: str                   # Résumé en 1 phrase pour les patientes
     topic_tag: str = "general"
+    critique_flags: dict = field(default_factory=dict)  # funding, RCT, sample size, diversity, stats
 
     def __repr__(self):
         return (
@@ -216,6 +220,17 @@ SCRIPT_STRUCTURES = {
         ("TIMELINE",   35, "Dates, nombre de patients, où s'inscrire"),
         ("CRITICAL",   40, "Biais potentiels, conflits d'intérêt, limites"),
         ("TAKE_HOME",  25, "Puis-je participer ? Que peut-on attendre ?"),
+        ("OUTRO",      10, "Call to action"),
+    ],
+    ContentType.FLASHBACK: [
+        ("HOOK",       17, "Accroche — pourquoi cet article a tout changé"),
+        ("CONTEXT",    30, "Qui, quand, dans quel contexte scientifique ?"),
+        ("DISCOVERY",  55, "La découverte clé — ce qu'ils ont prouvé pour la 1ère fois"),
+        ("IMPACT",     50, "Comment ça a changé la compréhension / le traitement de l'endo"),
+        ("EVOLUTION",  45, "Ce qu'on a appris depuis : confirmations, nuances, contradictions"),
+        ("CRITICAL",   40, "Les limites de l'époque : méthodologie, biais, contexte historique"),
+        ("TODAY",      35, "Qu'est-ce que ça signifie pour les patientes aujourd'hui ?"),
+        ("TAKE_HOME",  25, "Pourquoi cet article reste une référence incontournable"),
         ("OUTRO",      10, "Call to action"),
     ],
 }

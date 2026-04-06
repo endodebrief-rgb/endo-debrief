@@ -43,29 +43,225 @@ class VideoSection:
 
 
 @dataclass
+class PlatformContent:
+    """
+    Contenu adapté à une plateforme spécifique.
+    Chaque plateforme a son propre script, ton, et caption.
+    """
+    platform: str           # "youtube", "tiktok", "instagram", "facebook"
+    narration: str          # Script narration adapté à la durée et au ton de la plateforme
+    caption: str            # Texte de la publication (description YouTube ou caption réseau social)
+    hashtags: list[str]     # Hashtags spécifiques à la plateforme
+    title: str              # Titre adapté (YouTube SEO vs TikTok hook vs Facebook)
+    duration_s: int         # Durée cible en secondes
+    tone_notes: str         # Notes éditoriales sur le ton (pour référence)
+
+
+@dataclass
 class VideoScript:
-    """Script complet d'une vidéo."""
+    """Script complet d'une vidéo avec déclinaisons par plateforme."""
     article_pmid: str
     article_title: str
-    video_title: str         # Titre optimisé pour YouTube/TikTok
-    video_description: str   # Description pour YouTube
-    hashtags: list[str]      # Hashtags pour toutes plateformes
+    video_title: str         # Titre principal (YouTube)
+    video_description: str   # Description YouTube complète
+    hashtags: list[str]      # Hashtags communs
     sections: list[VideoSection]
-    short_script: str        # Version condensée 75s pour Reels/TikTok
-    short_title: str         # Titre court pour TikTok
+    short_script: str        # Version condensée 75s (legacy, remplacé par platform_scripts)
+    short_title: str         # Titre court (legacy)
+
+    # Déclinaisons par plateforme (générées par generate_platform_scripts)
+    platform_scripts: dict = None  # {platform: PlatformContent}
+
+    def __post_init__(self):
+        if self.platform_scripts is None:
+            self.platform_scripts = {}
 
     @property
     def full_narration(self) -> str:
-        """Texte complet à synthétiser en voix off."""
+        """Texte complet à synthétiser en voix off (version YouTube)."""
         return "\n\n".join(s.narration for s in self.sections)
 
     @property
     def short_narration(self) -> str:
+        """Version courte pour TikTok/Reels."""
+        if "tiktok" in self.platform_scripts:
+            return self.platform_scripts["tiktok"].narration
         return self.short_script
 
     @property
     def total_duration(self) -> int:
         return sum(s.duration_s for s in self.sections)
+
+
+def generate_platform_scripts(
+    script: VideoScript,
+    scored_item,
+) -> dict:
+    """
+    Génère les déclinaisons du script pour chaque plateforme.
+
+    À partir du script YouTube complet, GPT-4o génère 3 versions adaptées :
+    - TikTok  : 60-75s, ultra-dynamique, hook immédiat, vocabulaire simple et percutant
+    - Instagram : 75-90s, légèrement plus posé que TikTok, visuellement descriptif
+    - Facebook : 2-3 min, plus profond, audience plus âgée, nuances scientifiques bienvenues
+
+    Retourne un dict {platform: PlatformContent}.
+    """
+    client = OpenAI(api_key=config.OPENAI_API_KEY)
+
+    item = scored_item.item
+    critique_flags = scored_item.critique_flags or {}
+
+    # Construire un résumé du script principal pour le contexte
+    full_narration_summary = script.full_narration[:3000]
+
+    prompt = f"""You are Dr. Yohann Dabi, a gynecologist running "Endo Debrief" — a science communication channel about endometriosis research.
+
+You have already written a complete YouTube video script (4-5 min) for this content:
+
+TITLE: {item.title}
+TYPE: {item.content_type_label}
+TOPIC TAG: {scored_item.topic_tag}
+ONE-LINE SUMMARY: {scored_item.summary}
+
+CRITIQUE FLAGS (use these for honest critical notes):
+- Funding: {critique_flags.get('funding_source', 'unknown')}
+- RCT: {critique_flags.get('is_rct', False)}
+- Sample size adequate: {critique_flags.get('sample_size_adequate', 'unknown')}
+- Population diverse: {critique_flags.get('population_diverse', 'unknown')}
+- Stats reported: {critique_flags.get('stats_reported', 'unknown')}
+
+FULL YOUTUBE SCRIPT (excerpt):
+{full_narration_summary}
+
+Now generate 3 platform-specific adaptations. Each platform has a VERY DIFFERENT audience, format and tone:
+
+=== TIKTOK (60-75 seconds) ===
+Audience: 18-35 year olds, mostly patients and young people. They have 2 seconds to decide to keep watching.
+Tone: ELECTRIFYING. Fast-paced. Punchy. Use short sentences. Start with the most shocking/surprising fact.
+Format: Hook (5s) → Key finding (20s) → "Why this matters for YOU" (15s) → Critical note in 1 sentence (10s) → CTA (5s)
+Caption: Short, emoji-rich, conversational. Max 150 characters + hashtags. Use "I" voice ("What I found in this study will surprise you...")
+DO NOT start with "Hey everyone" or generic greetings.
+
+=== INSTAGRAM REELS (75-90 seconds) ===
+Audience: 25-45 year olds, patients + caregivers + some HCPs. Slightly more educated audience than TikTok.
+Tone: Warm, authoritative, empathetic. You're speaking to someone who's been through a lot.
+Format: Hook (8s) → Context (15s) → Key findings (25s) → What it means for patients (20s) → Honest critical note (10s) → CTA (7s)
+Caption: Personal and rich. 200-250 characters. More reflective tone. Use "we" ("In endometriosis research, we're seeing...")
+Hashtags: Mix of community (#endowarrior) and scientific (#endoresearch) tags.
+
+=== FACEBOOK (2-3 minutes) ===
+Audience: 30-55 year olds, patients + medical community + patient advocates. They READ, not just watch.
+Tone: Deep, nuanced, respectful of their intelligence. Can use more medical terms if briefly explained.
+Format: Context-setting hook (15s) → Background & significance (30s) → Detailed findings (50s) → Methodological critique (40s) → Clinical implications (30s) → Take-home message (20s) → CTA (10s)
+Caption: Long-form, almost like a mini-article. 400-500 characters. Professional, cite the DOI. Include a specific question to spark comments.
+Hashtags: Fewer, more professional (#endometriosis #womenshealth #medicalresearch).
+
+Return a JSON object with this structure:
+{{
+  "tiktok": {{
+    "title": "TikTok title/caption first line (max 40 chars, starts with a hook, NO 'Hey everyone')",
+    "narration": "Complete TikTok narration (60-75s). Fast, punchy, exciting.",
+    "caption": "TikTok caption (max 150 chars + emoji)",
+    "hashtags": ["endometriosis", "endowarrior", "science", "health", ...],
+    "duration_s": 70,
+    "tone_notes": "Ultra-dynamic, shocking opening stat, 1-sentence critical note"
+  }},
+  "instagram": {{
+    "title": "Instagram Reels title (max 50 chars)",
+    "narration": "Complete Instagram narration (75-90s). Warm, empathetic, a bit more depth than TikTok.",
+    "caption": "Instagram caption (200-250 chars, personal tone, emoji)",
+    "hashtags": ["endometriosis", "endowarrior", "endoresearch", "womenshealth", ...],
+    "duration_s": 85,
+    "tone_notes": "Empathetic, personal 'I' voice, community feel"
+  }},
+  "facebook": {{
+    "title": "Facebook post title (max 80 chars, more formal)",
+    "narration": "Complete Facebook narration (2-3 min). Deep, nuanced, full critique.",
+    "caption": "Facebook caption (400-500 chars, professional, question to spark comments, DOI included)",
+    "hashtags": ["endometriosis", "womenshealth", "medicalresearch", "endodebrief"],
+    "duration_s": 150,
+    "tone_notes": "Nuanced, respects intelligence, methodological critique included"
+  }}
+}}
+
+CRITICAL RULES:
+- All narrations in English only
+- TikTok MUST feel exciting and urgent — not like a lecture
+- Facebook MUST include a specific methodological critique based on the critique_flags above
+- Each platform's caption must be completely different in tone and structure
+- Never make up data not in the original script
+- Use "I" (first person) throughout — this is Dr. Dabi speaking directly"""
+
+    try:
+        response = client.chat.completions.create(
+            model=config.GPT_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.8,
+            response_format={"type": "json_object"},
+            max_tokens=3000,
+        )
+
+        raw = response.choices[0].message.content
+        data = json.loads(raw)
+
+        platform_scripts = {}
+        for platform in ["tiktok", "instagram", "facebook"]:
+            if platform in data:
+                pd = data[platform]
+                platform_scripts[platform] = PlatformContent(
+                    platform=platform,
+                    narration=pd.get("narration", ""),
+                    caption=pd.get("caption", ""),
+                    hashtags=pd.get("hashtags", []),
+                    title=pd.get("title", ""),
+                    duration_s=int(pd.get("duration_s", 75)),
+                    tone_notes=pd.get("tone_notes", ""),
+                )
+
+        # Ajouter YouTube depuis le script principal
+        platform_scripts["youtube"] = PlatformContent(
+            platform="youtube",
+            narration=script.full_narration,
+            caption=script.video_description,
+            hashtags=script.hashtags,
+            title=script.video_title,
+            duration_s=script.total_duration,
+            tone_notes="Full structured video with sections, professional, SEO-optimized",
+        )
+
+        logger.info(
+            f"✓ Platform scripts generated for: "
+            + ", ".join(platform_scripts.keys())
+        )
+        return platform_scripts
+
+    except Exception as e:
+        logger.error(f"Platform script generation failed: {e}")
+        # Fallback : utiliser le short_script pour toutes les plateformes courtes
+        fallback = PlatformContent(
+            platform="fallback",
+            narration=script.short_script,
+            caption=f"{script.video_title}\n\n{scored_item.summary}\n\n#endometriosis #endodebrief",
+            hashtags=script.hashtags,
+            title=script.short_title,
+            duration_s=75,
+            tone_notes="Fallback — platform generation failed",
+        )
+        return {
+            "youtube": PlatformContent(
+                platform="youtube",
+                narration=script.full_narration,
+                caption=script.video_description,
+                hashtags=script.hashtags,
+                title=script.video_title,
+                duration_s=script.total_duration,
+                tone_notes="Full YouTube script",
+            ),
+            "tiktok": fallback,
+            "instagram": fallback,
+            "facebook": fallback,
+        }
 
 
 def generate_video_script(
@@ -530,6 +726,129 @@ Hashtags should include: endometriosis, clinicaltrial, endoresearch, endowarrior
         raise
 
 
+# ── Scripts pour les Flashbacks ───────────────────────────────────────────────
+
+def generate_flashback_script(scored_item) -> VideoScript:
+    """
+    Génère un script pour un article historique fondateur.
+    Angle : "Ce papier a tout changé — voici pourquoi on en parle encore aujourd'hui."
+    """
+    client = OpenAI(api_key=config.OPENAI_API_KEY)
+    item = scored_item.item
+    extra = item.extra_data
+    critique_flags = scored_item.critique_flags or {}
+
+    logger.info(f"Generating FLASHBACK script for: {item.title[:60]}...")
+
+    system_prompt = """You are Dr. Yohann Dabi, a gynecologist specializing in endometriosis.
+You create "Flashback" videos that revisit landmark scientific papers — studies published
+5+ years ago that fundamentally changed how we understand or treat endometriosis.
+
+Your role with flashback videos:
+- Explain WHY this paper was revolutionary at the time
+- Show HOW it changed clinical practice or scientific thinking
+- Honestly assess what we've learned SINCE: what was confirmed, what was nuanced, what was wrong
+- Help patients understand the HISTORY of knowledge about their condition
+- Make them feel part of a larger story of scientific progress"""
+
+    # Construire les flags de critique pour le prompt
+    critique_context = f"""
+HISTORICAL CRITIQUE CONTEXT:
+- Funding source: {critique_flags.get('funding_source', 'unknown')}
+- Was an RCT: {critique_flags.get('is_rct', False)}
+- Sample size adequate for its era: {critique_flags.get('sample_size_adequate', 'unknown')}
+- Population diverse: {critique_flags.get('population_diverse', 'unknown')}
+- Statistics properly reported: {critique_flags.get('stats_reported', 'unknown')}
+
+Note: judge the methodology by the standards of its era, not today's standards."""
+
+    user_prompt = f"""Generate a Flashback video script for this landmark endometriosis paper:
+
+TITLE: {item.title}
+JOURNAL: {item.source_name}
+PUBLISHED: {item.pub_date}
+AUTHORS: {', '.join(item.authors[:3])}
+PMID: {item.uid}
+URL: {item.url}
+
+ABSTRACT:
+{item.abstract}
+
+ONE-LINE SUMMARY:
+{scored_item.summary}
+
+{critique_context}
+
+Generate a JSON response with the same structure as other scripts (video_title, short_title,
+video_description, hashtags, sections, short_script).
+
+SECTIONS (in order):
+- HOOK (15s): Why should I care about a paper from [year]? What did it change?
+- CONTEXT (28s): The scientific landscape when this was published. What did we know before?
+- DISCOVERY (55s): The key finding(s). What did they prove or show for the first time?
+- IMPACT (48s): How did this change clinical practice, diagnosis, treatment?
+- EVOLUTION (45s): What happened since? Follow-up studies, confirmations, contradictions?
+- CRITICAL (40s): Honest methodological critique IN CONTEXT of when it was published
+- TODAY (33s): What does this mean for patients TODAY in 2025-2026?
+- TAKE_HOME (23s): Why is this paper still worth knowing? Legacy.
+- OUTRO (10s): Subscribe for more Endo Debrief
+
+Video title format: "Flashback: [Key finding] — The [Year] Paper That Changed Endometriosis"
+Hashtags should include: endometriosis, endoresearch, endodebrief, sciencehistory, endoflashback
+
+IMPORTANT:
+- Be honest about the historical context — methodology that was standard then may be weak now
+- Show intellectual evolution, not just praise
+- The EVOLUTION section is key — what happened after this paper?
+- Use "I" voice throughout — Dr. Dabi speaking"""
+
+    try:
+        response = client.chat.completions.create(
+            model=config.GPT_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.7,
+            response_format={"type": "json_object"},
+            max_tokens=4000,
+        )
+
+        raw = response.choices[0].message.content
+        data = json.loads(raw)
+
+        sections = [
+            VideoSection(
+                name=s.get("name", ""),
+                narration=s.get("narration", ""),
+                slide_title=s.get("slide_title", ""),
+                slide_bullets=s.get("slide_bullets", []),
+                visual_prompt=s.get("visual_prompt", ""),
+                duration_s=int(s.get("duration_s", 20)),
+            )
+            for s in data.get("sections", [])
+        ]
+
+        flashback_hashtags = config.YOUTUBE_DEFAULT_TAGS + [
+            "endoflashback", "sciencehistory", "endoresearch"
+        ]
+
+        return VideoScript(
+            article_pmid=item.uid,
+            article_title=item.title,
+            video_title=data.get("video_title", f"Flashback: {item.title[:60]}"),
+            video_description=data.get("video_description", ""),
+            hashtags=data.get("hashtags", flashback_hashtags),
+            sections=sections,
+            short_script=data.get("short_script", ""),
+            short_title=data.get("short_title", item.title[:40]),
+        )
+
+    except Exception as e:
+        logger.error(f"Flashback script generation failed for {item.uid}: {e}")
+        raise
+
+
 # ── Dispatcher unifié ─────────────────────────────────────────────────────────
 
 
@@ -587,6 +906,9 @@ def generate_script_for_item(
     elif ct == ContentType.CLINICAL_TRIAL:
         return generate_trial_script(scored_item)
 
+    elif ct == ContentType.FLASHBACK:
+        return generate_flashback_script(scored_item)
+
     else:
         raise ValueError(f"Unknown content type: {ct}")
 
@@ -611,7 +933,13 @@ def generate_all_scripts(
         ct = item.item.content_type
 
         try:
+            # 1. Générer le script principal (YouTube long format)
             script = generate_script_for_item(item, full_text_results=full_text_results)
+
+            # 2. Générer les déclinaisons par plateforme (TikTok, Instagram, Facebook)
+            logger.info(f"  Generating platform-specific scripts for {uid}...")
+            script.platform_scripts = generate_platform_scripts(script, item)
+
             scripts.append(script)
 
             ft_status = ""
@@ -622,9 +950,11 @@ def generate_all_scripts(
                     else " [abstract only]"
                 )
 
+            platforms_done = list(script.platform_scripts.keys())
             logger.info(
                 f"✓ Script [{item.item.content_type_label}]: "
-                f"{script.video_title[:60]}{ft_status}"
+                f"{script.video_title[:55]}{ft_status} "
+                f"— platforms: {', '.join(platforms_done)}"
             )
         except Exception as e:
             logger.error(f"✗ Failed to generate script for {uid} ({ct.value}): {e}")

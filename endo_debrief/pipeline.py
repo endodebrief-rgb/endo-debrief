@@ -35,7 +35,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from . import config
-from .pubmed import get_articles_with_fulltext_priority, search_guidelines_pubmed
+from .pubmed import get_articles_with_fulltext_priority, search_guidelines_pubmed, search_flashback_articles
 from .clinicaltrials import get_all_interesting_trials
 from .recommendations import get_all_guidelines
 from .content_types import ContentItem, ContentType, from_pubmed_article, from_clinical_trial, from_guideline
@@ -107,11 +107,27 @@ def run_generate(week_date: str = "", dry_run: bool = False) -> Path:
     except Exception as e:
         console.print(f"  [yellow]⚠ Clinical trials fetch failed: {e}[/]")
 
+    # Source D : Articles Flashback (études fondatrices très citées, >5 ans)
+    console.print("  🕰️  Flashback articles (landmark studies, >5 years old)...")
+    try:
+        flashback_articles = search_flashback_articles(max_results=5)
+        for article in flashback_articles:
+            item = from_pubmed_article(article)
+            item.content_type = ContentType.FLASHBACK
+            all_content_items.append(item)
+        console.print(f"  [green]✓[/] {len(flashback_articles)} flashback articles")
+    except Exception as e:
+        console.print(f"  [yellow]⚠ Flashback search failed: {e}[/]")
+
+    n_articles  = sum(1 for i in all_content_items if i.content_type == ContentType.RESEARCH_ARTICLE)
+    n_guidelines= sum(1 for i in all_content_items if i.content_type == ContentType.GUIDELINE)
+    n_trials    = sum(1 for i in all_content_items if i.content_type == ContentType.CLINICAL_TRIAL)
+    n_flashback = sum(1 for i in all_content_items if i.content_type == ContentType.FLASHBACK)
+
     console.print(
         f"\n[bold]Total content pool: {len(all_content_items)} items[/] "
-        f"({sum(1 for i in all_content_items if i.content_type == ContentType.RESEARCH_ARTICLE)} articles, "
-        f"{sum(1 for i in all_content_items if i.content_type == ContentType.GUIDELINE)} guidelines, "
-        f"{sum(1 for i in all_content_items if i.content_type == ContentType.CLINICAL_TRIAL)} trials)"
+        f"({n_articles} articles, {n_guidelines} guidelines, "
+        f"{n_trials} trials, {n_flashback} flashbacks)"
     )
 
     if not all_content_items:
@@ -227,7 +243,7 @@ def run_generate(week_date: str = "", dry_run: bool = False) -> Path:
 
     manifest_path = generate_review_manifest(
         scripts=scripts,
-        scored_articles=top_articles,
+        scored_articles=top_items,
         video_paths=all_video_paths,
         output_dir=output_dir,
         week_date=week_date,
@@ -281,7 +297,8 @@ def run_publish(manifest_path: str) -> dict:
             console.print(f"  ⏭ Video #{video['index']} skipped (not approved)")
             continue
 
-        console.print(f"\n[bold]Publishing Video #{video['index']}:[/] {video['youtube']['title'][:60]}...")
+        yt_title = video.get("youtube", {}).get("title", "")
+        console.print(f"\n[bold]Publishing Video #{video['index']}:[/] {yt_title[:60]}...")
 
         try:
             results = publish_all_platforms(video)

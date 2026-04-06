@@ -28,6 +28,7 @@ CONTENT_TYPE_QUOTAS = {
     ContentType.RESEARCH_ARTICLE: {"min": 1, "max": 3},
     ContentType.GUIDELINE:        {"min": 0, "max": 1},
     ContentType.CLINICAL_TRIAL:   {"min": 0, "max": 1},
+    ContentType.FLASHBACK:        {"min": 0, "max": 1},
 }
 
 
@@ -78,11 +79,21 @@ Scoring bonuses to apply internally:
 - Completed trial WITH results: +2 scientific_impact (primary data before publication)
 - New trial from industry/NIH: +1 viral_potential (signals research direction)
 - Articles with full-text available: mentioned in abstract field if applicable
+- RCT (randomized controlled trial): +1 scientific_impact (highest evidence level)
+- Flashback articles (highly cited, >5 years old): +1 pedagogical_value
+
+CRITICAL REVIEW CRITERIA — also assess and return these for each item:
+- funding_source: "industry", "public", "mixed", or "unknown" (look for pharma, NIH, grants)
+- is_rct: true/false (randomized controlled trial or not)
+- sample_size_adequate: true/false (>100 for clinical, >50 for mechanistic usually adequate)
+- population_diverse: true/false (includes varied ethnicities, ages, severity grades)
+- stats_reported: true/false (p-values or confidence intervals explicitly reported)
+These will be used to auto-generate a specific, honest critical review in the video.
 
 Also provide:
 - topic_tag: one of [surgery, pain, fertility, biomarkers, imaging, genetics,
   microbiome, quality_of_life, treatment, epidemiology, trial_design,
-  guideline_update, other]
+  guideline_update, flashback, other]
 - one_line_summary: One punchy sentence a patient would share (not academic)
 
 Items to score:
@@ -99,7 +110,12 @@ Return a JSON array — one object per item:
     "pedagogical_value": 7,
     "viral_potential": 6,
     "topic_tag": "surgery",
-    "one_line_summary": "..."
+    "one_line_summary": "...",
+    "funding_source": "public",
+    "is_rct": false,
+    "sample_size_adequate": true,
+    "population_diverse": false,
+    "stats_reported": true
   }},
   ...
 ]
@@ -134,12 +150,20 @@ Return ONLY the JSON array, no other text."""
                         "viral_potential": float(item_data.get("viral_potential", 5)),
                     }
                     total = sum(scores.values())
+                    critique_flags = {
+                        "funding_source": item_data.get("funding_source", "unknown"),
+                        "is_rct": item_data.get("is_rct", False),
+                        "sample_size_adequate": item_data.get("sample_size_adequate", None),
+                        "population_diverse": item_data.get("population_diverse", None),
+                        "stats_reported": item_data.get("stats_reported", None),
+                    }
                     scored.append(ScoredContentItem(
                         item=item,
                         scores=scores,
                         total_score=total,
                         summary=item_data.get("one_line_summary", item.title),
                         topic_tag=item_data.get("topic_tag", "other"),
+                        critique_flags=critique_flags,
                     ))
 
         except Exception as e:

@@ -338,7 +338,9 @@ def publish_all_platforms(video_manifest: dict) -> dict:
     Publie une vidéo sur toutes les plateformes configurées.
 
     Arguments:
-        video_manifest : entrée du review_manifest.json pour une vidéo
+        video_manifest : entrée du review_manifest.json pour une vidéo.
+                         Utilise platform_scripts (contenu spécifique par plateforme)
+                         en priorité sur les champs génériques youtube/instagram/etc.
 
     Retourne les résultats de publication pour chaque plateforme.
     """
@@ -346,10 +348,56 @@ def publish_all_platforms(video_manifest: dict) -> dict:
     errors = {}
 
     files = video_manifest.get("files", {})
-    youtube_meta = video_manifest.get("youtube", {})
+
+    # Métadonnées génériques (fallback)
+    youtube_meta   = video_manifest.get("youtube", {})
     instagram_meta = video_manifest.get("instagram", {})
-    tiktok_meta = video_manifest.get("tiktok", {})
-    facebook_meta = video_manifest.get("facebook", {})
+    tiktok_meta    = video_manifest.get("tiktok", {})
+    facebook_meta  = video_manifest.get("facebook", {})
+
+    # Scripts spécifiques par plateforme (générés par GPT-4o — prioritaires)
+    ps = video_manifest.get("platform_scripts", {})
+    yt_ps  = ps.get("youtube", {})
+    ig_ps  = ps.get("instagram", {})
+    tt_ps  = ps.get("tiktok", {})
+    fb_ps  = ps.get("facebook", {})
+
+    # ── Résoudre les contenus plateforme par plateforme ────────────────────────
+
+    # YouTube — titre + description + tags
+    yt_title       = yt_ps.get("title")       or youtube_meta.get("title", "")
+    yt_description = yt_ps.get("caption")     or youtube_meta.get("description", "")
+    yt_tags        = yt_ps.get("hashtags")    or youtube_meta.get("tags", [])
+    yt_privacy     = youtube_meta.get("privacy", "public")
+
+    # Instagram — caption warm + hashtags empathiques
+    ig_caption = ig_ps.get("caption") or instagram_meta.get("caption", "")
+    if ig_ps.get("hashtags"):
+        ig_caption = (
+            ig_caption
+            + "\n\n"
+            + " ".join(f"#{h.lstrip('#')}" for h in ig_ps["hashtags"])
+        )[:2200]
+
+    # TikTok — caption excitant + hashtags viraux
+    tt_caption = tt_ps.get("caption") or tiktok_meta.get("caption", "")
+    if tt_ps.get("hashtags"):
+        tt_caption = (
+            tt_caption
+            + " "
+            + " ".join(f"#{h.lstrip('#')}" for h in tt_ps["hashtags"])
+        )[:2200]
+
+    # Facebook — titre + description longue et nuancée
+    fb_title       = fb_ps.get("title")   or facebook_meta.get("title", "")
+    fb_description = fb_ps.get("caption") or facebook_meta.get("description", "")
+
+    logger.info(
+        f"Publishing: YT='{yt_title[:50]}...', "
+        f"IG={len(ig_caption)}chars, TT={len(tt_caption)}chars, FB='{fb_title[:40]}...'"
+    )
+
+    # ── Publication plateforme par plateforme ──────────────────────────────────
 
     # YouTube
     if files.get("video_long") and config.YOUTUBE_REFRESH_TOKEN:
@@ -357,10 +405,10 @@ def publish_all_platforms(video_manifest: dict) -> dict:
             results["youtube"] = publish_youtube(
                 video_path=files["video_long"],
                 thumbnail_path=files.get("thumbnail", ""),
-                title=youtube_meta.get("title", ""),
-                description=youtube_meta.get("description", ""),
-                tags=youtube_meta.get("tags", []),
-                privacy=youtube_meta.get("privacy", "public"),
+                title=yt_title,
+                description=yt_description,
+                tags=yt_tags,
+                privacy=yt_privacy,
             )
         except Exception as e:
             logger.error(f"YouTube publish failed: {e}")
@@ -371,7 +419,7 @@ def publish_all_platforms(video_manifest: dict) -> dict:
         try:
             results["instagram"] = publish_instagram_reel(
                 video_path=files["video_short"],
-                caption=instagram_meta.get("caption", ""),
+                caption=ig_caption,
             )
         except Exception as e:
             logger.error(f"Instagram publish failed: {e}")
@@ -382,7 +430,7 @@ def publish_all_platforms(video_manifest: dict) -> dict:
         try:
             results["tiktok"] = publish_tiktok(
                 video_path=files["video_short"],
-                caption=tiktok_meta.get("caption", ""),
+                caption=tt_caption,
             )
         except Exception as e:
             logger.error(f"TikTok publish failed: {e}")
@@ -393,8 +441,8 @@ def publish_all_platforms(video_manifest: dict) -> dict:
         try:
             results["facebook"] = publish_facebook(
                 video_path=files["video_long"],
-                title=facebook_meta.get("title", ""),
-                description=facebook_meta.get("description", ""),
+                title=fb_title,
+                description=fb_description,
             )
         except Exception as e:
             logger.error(f"Facebook publish failed: {e}")

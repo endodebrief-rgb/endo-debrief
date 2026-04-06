@@ -285,15 +285,20 @@ def generate_dalle_illustration(prompt: str, landscape: bool = True) -> Optional
 
     client = OpenAI(api_key=config.OPENAI_API_KEY)
 
-    # Enrichir le prompt pour un style cohérent Endo Debrief
-    styled_prompt = (
-        f"{prompt}. "
-        "Style: clean medical illustration, dark purple and pink color palette, "
-        "modern scientific infographic style, no text overlays, high contrast, "
-        "professional health communication visual. "
-        "Background should be dark (#0F0F1A navy). "
-        "Colors: purple (#6B2D8B), rose pink (#E8A0BF), white highlights."
+    # Style VERROUILLÉ Endo Debrief — identité visuelle cohérente sur toutes les vidéos.
+    # NE PAS modifier ce style sans mettre à jour la charte graphique complète.
+    ENDO_DEBRIEF_STYLE = (
+        "Flat design medical illustration, minimalist and clean. "
+        "Color palette STRICTLY: deep purple (#6B2D8B), rose pink (#E8A0BF), "
+        "lavender (#C084FC), white (#F5F5F5) on dark navy background (#0F0F1A). "
+        "Style: modern scientific infographic, paper-cut aesthetic, "
+        "geometric shapes, smooth gradients. "
+        "NO photorealism, NO stock photo style, NO text overlays, NO watermarks. "
+        "Think: Vox or Kurzgesagt visual style applied to medical science. "
+        "Consistent character design if people are shown: simple, diverse, gender-neutral. "
+        "High contrast, professional health communication visual."
     )
+    styled_prompt = f"{prompt}. {ENDO_DEBRIEF_STYLE}"
 
     size = "1792x1024" if landscape else "1024x1792"
 

@@ -383,6 +383,83 @@ def get_articles_with_fulltext_priority(
     return all_articles, extended
 
 
+def search_flashback_articles(
+    min_citations_approx: int = 100,
+    max_results: int = 10,
+    years_old_min: int = 5,
+) -> list[PubMedArticle]:
+    """
+    Recherche des articles fondateurs sur l'endométriose — très cités, publiés
+    il y a au moins `years_old_min` ans.
+
+    Stratégie : recherche PubMed sur les articles avec de nombreuses citations
+    (approximée via le tri "Best Match" ou "Relevance" sur des termes clés).
+    On cible des articles qui ont posé les bases du domaine.
+
+    Ces articles servent au format "Flashback" : on relit une étude qui a tout changé
+    et on explique ce qu'on en pense aujourd'hui.
+    """
+    year_cutoff = datetime.now().year - years_old_min
+    date_to = f"{year_cutoff}/12/31"
+    date_from = "1980/01/01"
+
+    # Termes de haut impact en endométriose — études fondatrices
+    queries = [
+        # Revues systématiques et méta-analyses fondatrices
+        (
+            '"endometriosis"[Title/Abstract] AND '
+            '("Systematic Review"[Publication Type] OR "Meta-Analysis"[Publication Type]) AND '
+            f'("1980/01/01"[Date - Publication] : "{date_to}"[Date - Publication]) AND '
+            "hasabstract[text]"
+        ),
+        # RCTs historiques sur les traitements
+        (
+            '"endometriosis"[Title/Abstract] AND '
+            '"Randomized Controlled Trial"[Publication Type] AND '
+            f'("1980/01/01"[Date - Publication] : "{date_to}"[Date - Publication]) AND '
+            "hasabstract[text]"
+        ),
+    ]
+
+    seen_pmids: set[str] = set()
+    all_articles: list[PubMedArticle] = []
+
+    for query in queries:
+        if len(all_articles) >= max_results:
+            break
+
+        params = {
+            "db": "pubmed",
+            "term": query,
+            "retmax": max_results,
+            "sort": "relevance",  # "Relevance" approxime les articles les plus cités
+            "retmode": "xml",
+        }
+        if config.NCBI_API_KEY:
+            params["api_key"] = config.NCBI_API_KEY
+
+        try:
+            resp = requests.get(f"{EUTILS_BASE}/esearch.fcgi", params=params, timeout=15)
+            resp.raise_for_status()
+            data = xmltodict.parse(resp.text)
+            id_list = data.get("eSearchResult", {}).get("IdList", {}).get("Id", [])
+            if isinstance(id_list, str):
+                id_list = [id_list]
+
+            new_pmids = [p for p in id_list if p not in seen_pmids]
+            seen_pmids.update(new_pmids)
+
+            if new_pmids:
+                articles = fetch_article_details(new_pmids[:max_results])
+                all_articles.extend(articles)
+                logger.info(f"Flashback search found {len(articles)} landmark articles")
+
+        except Exception as e:
+            logger.warning(f"Flashback search failed: {e}")
+
+    return all_articles[:max_results]
+
+
 def _count_pmc_available(pmids: list[str]) -> int:
     """
     Compte rapidement combien de PMIDs ont un article dans PMC.
