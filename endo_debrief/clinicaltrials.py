@@ -155,7 +155,7 @@ def _ct_get(endpoint: str, params: dict, timeout: int = 20) -> dict:
 
 def search_recruiting_trials(
     days_back: int = 90,
-    max_results: int = 20,
+    max_results: int = 10,
 ) -> list[ClinicalTrialItem]:
     """
     Recherche les essais en recrutement actif sur l'endométriose.
@@ -201,25 +201,26 @@ def search_recruiting_trials(
 
 def search_completed_trials_with_results(
     days_back: int = 180,
-    max_results: int = 15,
+    max_results: int = 10,
 ) -> list[ClinicalTrialItem]:
     """
     Recherche les essais récemment complétés avec des résultats disponibles.
     Ce sont les plus importants : résultats avant la publication du papier.
+    Note : filter.results n'existe pas dans l'API v2 — on filtre en post-processing
+    sur le champ hasResults.
     """
     logger.info("Searching for completed endo trials with results...")
 
     params = {
         "query.cond": "endometriosis",
         "filter.overallStatus": "COMPLETED",
-        "filter.results": "with",  # Uniquement les essais avec résultats
         "fields": (
             "NCTId,BriefTitle,OfficialTitle,OverallStatus,BriefSummary,"
             "Phase,EnrollmentCount,StartDate,PrimaryCompletionDate,"
             "LastUpdateSubmitDate,HasResults,LeadSponsorName,"
             "PrimaryOutcomeMeasure,EligibilityCriteria"
         ),
-        "pageSize": max_results,
+        "pageSize": max_results * 3,  # On en prend plus pour filtrer ensuite
         "sort": "LastUpdateSubmitDate:desc",
     }
 
@@ -231,8 +232,11 @@ def search_completed_trials_with_results(
         for study in studies:
             try:
                 trial = ClinicalTrialItem(study)
-                if _updated_recently(trial, days_back):
+                # Filtrer : uniquement ceux avec résultats ET mis à jour récemment
+                if trial.has_results and _updated_recently(trial, days_back):
                     trials.append(trial)
+                    if len(trials) >= max_results:
+                        break
             except Exception as e:
                 logger.debug(f"Failed to parse completed trial: {e}")
 
@@ -246,17 +250,18 @@ def search_completed_trials_with_results(
 
 def search_new_trials(
     days_back: int = 30,
-    max_results: int = 15,
+    max_results: int = 10,
 ) -> list[ClinicalTrialItem]:
     """
     Recherche les nouveaux essais enregistrés récemment.
     Signal sur les directions de la recherche.
+    Note : filter.firstPosted utilise la syntaxe "{date}:MAX" (MAX en majuscules).
     """
     date_from = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
     params = {
         "query.cond": "endometriosis",
-        "filter.firstPosted": f"{date_from}:maximum",
+        "filter.firstPosted": f"{date_from}:MAX",  # MAX en majuscules (syntaxe API v2)
         "fields": (
             "NCTId,BriefTitle,OfficialTitle,OverallStatus,BriefSummary,"
             "Phase,EnrollmentCount,StartDate,PrimaryCompletionDate,"

@@ -87,10 +87,10 @@ def run_generate(week_date: str = "", dry_run: bool = False) -> Path:
         all_content_items.append(from_pubmed_article(article))
     console.print(f"  [green]✓[/] {len(pubmed_articles)} PubMed articles")
 
-    # Source B : Recommandations et guidelines cliniques
+    # Source B : Recommandations et guidelines cliniques (limité à 8 pour le scoring)
     console.print("  📋 Clinical guidelines (ESHRE, ACOG, Cochrane, PubMed)...")
     try:
-        guidelines = get_all_guidelines(days_back=180)
+        guidelines = get_all_guidelines(days_back=180)[:8]
         for gl in guidelines:
             all_content_items.append(from_guideline(gl.to_dict()))
         console.print(f"  [green]✓[/] {len(guidelines)} guidelines found")
@@ -133,6 +133,18 @@ def run_generate(week_date: str = "", dry_run: bool = False) -> Path:
     if not all_content_items:
         console.print("[red]✗ No content found. Aborting.[/]")
         sys.exit(1)
+
+    # Plafonner le pool total à 40 items pour limiter la consommation OpenAI
+    # Priorité : articles récents > guidelines > trials > flashbacks
+    if len(all_content_items) > 40:
+        from .content_types import ContentType as _CT
+        pool: list = []
+        for ct in [_CT.RESEARCH_ARTICLE, _CT.GUIDELINE, _CT.CLINICAL_TRIAL, _CT.FLASHBACK]:
+            items_of_type = [i for i in all_content_items if i.content_type == ct]
+            caps = {_CT.RESEARCH_ARTICLE: 20, _CT.GUIDELINE: 8, _CT.CLINICAL_TRIAL: 8, _CT.FLASHBACK: 4}
+            pool.extend(items_of_type[:caps[ct]])
+        all_content_items = pool
+        console.print(f"[dim]Pool capped at {len(all_content_items)} items for scoring efficiency.[/]")
 
     # ─── Étape 2 : Scoring unifié ────────────────────────────────────────────
     console.print("\n[bold]Step 2/8:[/] Scoring all content (GPT-4o unified scoring)...")
