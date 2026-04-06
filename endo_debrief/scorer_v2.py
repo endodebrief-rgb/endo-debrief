@@ -127,17 +127,27 @@ Return ONLY the JSON array, no other text."""
                 model=config.GPT_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
-                response_format={"type": "json_object"},
+                # Pas de json_object ici : on veut un tableau JSON, pas un objet
             )
 
-            raw = response.choices[0].message.content
-            result = json.loads(raw)
-            if isinstance(result, dict):
-                # GPT peut encapsuler dans un objet
-                result = next(
-                    (v for v in result.values() if isinstance(v, list)),
-                    list(result.values())[0] if result else []
-                )
+            raw = response.choices[0].message.content or ""
+
+            # Extraire le tableau JSON même s'il est entouré de texte ou enveloppé
+            import re as _re
+            json_match = _re.search(r'\[.*\]', raw, _re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group())
+            else:
+                # Essayer de parser directement (objet enveloppant)
+                obj = json.loads(raw)
+                if isinstance(obj, list):
+                    result = obj
+                elif isinstance(obj, dict):
+                    result = next(
+                        (v for v in obj.values() if isinstance(v, list)), []
+                    )
+                else:
+                    raise ValueError(f"Unexpected GPT response format: {type(obj)}")
 
             for item_data in result:
                 idx = item_data.get("index", 0)

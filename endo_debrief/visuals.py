@@ -275,6 +275,48 @@ def create_slide_short(
     return img
 
 
+def _sanitize_dalle_prompt(prompt: str) -> str:
+    """
+    Remplace les termes anatomiques explicites par des formulations abstraites
+    compatibles avec la politique de contenu de DALL-E 3.
+    """
+    replacements = {
+        "uterus": "internal organ (shown as abstract geometric shape)",
+        "uteri": "internal organs (shown as abstract geometric shapes)",
+        "ovary": "reproductive organ (abstract circular form)",
+        "ovaries": "reproductive organs (abstract circular forms)",
+        "endometrium": "tissue layer (abstract layered shapes)",
+        "endometrial": "tissue (abstract layered shapes)",
+        "lesion": "affected area (highlighted abstract zone)",
+        "lesions": "affected areas (highlighted abstract zones)",
+        "implant": "tissue growth (abstract organic shape)",
+        "implants": "tissue growths (abstract organic shapes)",
+        "adhesion": "connective tissue (abstract linking form)",
+        "adhesions": "connective tissues (abstract linking forms)",
+        "peritoneum": "body cavity lining (abstract surface)",
+        "fallopian tube": "internal duct (abstract curved form)",
+        "fallopian tubes": "internal ducts (abstract curved forms)",
+        "pelvic": "abdominal region",
+        "pelvis": "lower abdominal area",
+        "cervix": "reproductive structure (abstract cylindrical form)",
+        "vagina": "internal channel (abstract form)",
+        "endometriosis": "chronic inflammatory condition",
+        "bleeding": "fluid flow (abstract)",
+        "blood": "fluid (shown in abstract form)",
+    }
+    sanitized = prompt
+    for term, replacement in replacements.items():
+        # Remplacement insensible à la casse
+        import re as _re
+        sanitized = _re.sub(
+            r'\b' + _re.escape(term) + r'\b',
+            replacement,
+            sanitized,
+            flags=_re.IGNORECASE
+        )
+    return sanitized
+
+
 def generate_dalle_illustration(prompt: str, landscape: bool = True) -> Optional[Image.Image]:
     """
     Génère une illustration médicale via DALL-E 3.
@@ -285,20 +327,23 @@ def generate_dalle_illustration(prompt: str, landscape: bool = True) -> Optional
 
     client = OpenAI(api_key=config.OPENAI_API_KEY)
 
+    # Sanitiser le prompt pour éviter les violations de la politique DALL-E
+    safe_prompt = _sanitize_dalle_prompt(prompt)
+
     # Style VERROUILLÉ Endo Debrief — identité visuelle cohérente sur toutes les vidéos.
     # NE PAS modifier ce style sans mettre à jour la charte graphique complète.
     ENDO_DEBRIEF_STYLE = (
-        "Flat design medical illustration, minimalist and clean. "
+        "Flat design scientific illustration, minimalist and clean. "
         "Color palette STRICTLY: deep purple (#6B2D8B), rose pink (#E8A0BF), "
         "lavender (#C084FC), white (#F5F5F5) on dark navy background (#0F0F1A). "
         "Style: modern scientific infographic, paper-cut aesthetic, "
         "geometric shapes, smooth gradients. "
         "NO photorealism, NO stock photo style, NO text overlays, NO watermarks. "
-        "Think: Vox or Kurzgesagt visual style applied to medical science. "
-        "Consistent character design if people are shown: simple, diverse, gender-neutral. "
+        "Think: Vox or Kurzgesagt visual style applied to science communication. "
+        "Consistent character design if people are shown: simple, diverse, gender-neutral silhouettes. "
         "High contrast, professional health communication visual."
     )
-    styled_prompt = f"{prompt}. {ENDO_DEBRIEF_STYLE}"
+    styled_prompt = f"{safe_prompt}. {ENDO_DEBRIEF_STYLE}"
 
     size = "1792x1024" if landscape else "1024x1792"
 

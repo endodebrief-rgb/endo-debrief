@@ -108,9 +108,14 @@ jobs:
           with open('$MANIFEST') as f:
               m = json.load(f)
           for v in m.get('videos', []):
+              uid = v.get('uid') or v.get('pmid', 'N/A')
+              url = v.get('pubmed_url', '')
+              source = v.get('source_name') or v.get('journal', '')
+              ctype = v.get('content_type_label', '')
               print(f\"- **Video #{v['index']}**: {v['youtube']['title'][:80]}\")
-              print(f\"  - PMID: [{v['pmid']}]({v['pubmed_url']})\")
-              print(f\"  - Journal: {v['journal']}\")
+              print(f\"  - Type: {ctype}\")
+              print(f\"  - ID: [{uid}]({url})\")
+              print(f\"  - Source: {source}\")
               print()
           " >> $GITHUB_STEP_SUMMARY
           fi
