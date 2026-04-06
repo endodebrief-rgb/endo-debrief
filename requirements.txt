@@ -7,7 +7,7 @@ elevenlabs>=1.2.0
 requests>=2.31.0
 
 # Vidéo & images
-moviepy>=1.0.3
+moviepy==1.0.3
 Pillow>=10.0.0
 numpy>=1.24.0
 imageio>=2.31.0
