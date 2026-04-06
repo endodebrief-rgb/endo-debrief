@@ -277,43 +277,75 @@ def create_slide_short(
 
 def _sanitize_dalle_prompt(prompt: str) -> str:
     """
-    Remplace les termes anatomiques explicites par des formulations abstraites
-    compatibles avec la politique de contenu de DALL-E 3.
+    Reformule les termes anatomiques en langage de diagramme médical didactique
+    compatible avec la politique de contenu de DALL-E 3.
+
+    Principe : conserver la précision scientifique (quel organe, quel processus,
+    quelle comparaison) en utilisant le vocabulaire des schémas anatomiques
+    éducatifs — comme dans un manuel de gynécologie ou une infographie médicale.
+    Les illustrations restent fidèles au contenu de l'article ; elles adoptent
+    simplement le style d'un diagramme anatomique étiqueté plutôt qu'une image
+    clinique directe.
     """
-    replacements = {
-        "uterus": "internal organ (shown as abstract geometric shape)",
-        "uteri": "internal organs (shown as abstract geometric shapes)",
-        "ovary": "reproductive organ (abstract circular form)",
-        "ovaries": "reproductive organs (abstract circular forms)",
-        "endometrium": "tissue layer (abstract layered shapes)",
-        "endometrial": "tissue (abstract layered shapes)",
-        "lesion": "affected area (highlighted abstract zone)",
-        "lesions": "affected areas (highlighted abstract zones)",
-        "implant": "tissue growth (abstract organic shape)",
-        "implants": "tissue growths (abstract organic shapes)",
-        "adhesion": "connective tissue (abstract linking form)",
-        "adhesions": "connective tissues (abstract linking forms)",
-        "peritoneum": "body cavity lining (abstract surface)",
-        "fallopian tube": "internal duct (abstract curved form)",
-        "fallopian tubes": "internal ducts (abstract curved forms)",
-        "pelvic": "abdominal region",
-        "pelvis": "lower abdominal area",
-        "cervix": "reproductive structure (abstract cylindrical form)",
-        "vagina": "internal channel (abstract form)",
-        "endometriosis": "chronic inflammatory condition",
-        "bleeding": "fluid flow (abstract)",
-        "blood": "fluid (shown in abstract form)",
-    }
+    import re as _re
+
+    # Expressions multi-mots en premier pour éviter les remplacements partiels
+    replacements = [
+        # Organes — vocabulaire de schéma anatomique éducatif
+        ("fallopian tubes",  "fallopian ducts (anatomical schematic)"),
+        ("fallopian tube",   "fallopian duct (anatomical schematic)"),
+        ("pelvic cavity",    "lower abdominal cavity (anatomical cross-section)"),
+        ("uterus",           "uterine organ (labeled anatomical cross-section)"),
+        ("uteri",            "uterine organs (anatomical cross-sections)"),
+        ("ovaries",          "ovarian structures (anatomical schematics)"),
+        ("ovary",            "ovarian structure (anatomical schematic)"),
+        ("endometrium",      "endometrial tissue layer (labeled anatomical diagram)"),
+        ("endometrial",      "endometrial tissue (anatomical diagram)"),
+        ("cervix",           "cervical structure (anatomical cross-section)"),
+        ("peritoneum",       "peritoneal cavity lining (anatomical diagram)"),
+        ("pelvis",           "lower abdominal region (anatomical diagram)"),
+        ("pelvic",           "lower abdominal"),
+        ("vagina",           "lower reproductive tract (anatomical schematic)"),
+        ("vaginal",          "lower reproductive tract (anatomical schematic)"),
+
+        # Pathologie — visualisation scientifique précise et éducative
+        ("endometriosis",    "endometriotic disease (color-coded anatomical map showing tissue distribution)"),
+        ("lesions",          "pathological tissue zones (highlighted in anatomical diagram)"),
+        ("lesion",           "pathological tissue zone (highlighted in anatomical diagram)"),
+        ("implants",         "ectopic tissue deposits (marked on anatomical diagram)"),
+        ("implant",          "ectopic tissue deposit (marked on anatomical diagram)"),
+        ("adhesions",        "fibrotic tissue bridges (shown in anatomical cross-section)"),
+        ("adhesion",         "fibrotic tissue bridge (shown in anatomical cross-section)"),
+        ("infiltrating",     "deep-tissue (anatomical diagram)"),
+        ("infiltration",     "tissue infiltration depth (anatomical diagram)"),
+
+        # Processus biologiques — style infographique scientifique
+        ("hemorrhage",       "fluid accumulation zone (anatomical diagram)"),
+        ("bleeding",         "menstrual fluid flow (directional diagram)"),
+        ("inflammation",     "inflammatory response zone (color-coded scientific diagram)"),
+        ("inflammatory",     "inflammatory (color-coded scientific diagram)"),
+        ("blood",            "biological fluid (scientific diagram)"),
+        ("painful",          "pain-associated (anatomical pain pathway diagram)"),
+        ("pain",             "pain signal pathway (neural diagram)"),
+    ]
+
     sanitized = prompt
-    for term, replacement in replacements.items():
-        # Remplacement insensible à la casse
-        import re as _re
+    for term, replacement in replacements:
         sanitized = _re.sub(
             r'\b' + _re.escape(term) + r'\b',
             replacement,
             sanitized,
             flags=_re.IGNORECASE
         )
+
+    # Si le prompt décrit une comparaison avant/après (fréquent dans les articles
+    # de traitement), ajouter le contexte explicite de diagramme comparatif
+    if _re.search(
+        r'\b(before|after|comparison|versus|vs\.?|reduction|decrease|increase|improvement)\b',
+        sanitized, _re.IGNORECASE
+    ):
+        sanitized += " — scientific before-after comparison diagram, labeled panels, educational infographic"
+
     return sanitized
 
 
