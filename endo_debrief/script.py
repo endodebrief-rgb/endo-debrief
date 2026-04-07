@@ -590,7 +590,7 @@ ADDITIONAL RULES:
             ],
             temperature=0.85,
             response_format={"type": "json_object"},
-            max_tokens=5000,
+            max_tokens=8000,
         )
 
         raw = response.choices[0].message.content
@@ -739,7 +739,7 @@ ADDITIONAL RULES:
             ],
             temperature=0.6,
             response_format={"type": "json_object"},
-            max_tokens=4000,
+            max_tokens=8000,
         )
 
         raw = response.choices[0].message.content
@@ -894,7 +894,7 @@ ADDITIONAL RULES:
             ],
             temperature=0.7,
             response_format={"type": "json_object"},
-            max_tokens=4000,
+            max_tokens=8000,
         )
 
         raw = response.choices[0].message.content
@@ -1026,7 +1026,7 @@ ADDITIONAL RULES:
             ],
             temperature=0.7,
             response_format={"type": "json_object"},
-            max_tokens=4000,
+            max_tokens=8000,
         )
 
         raw = response.choices[0].message.content
@@ -1173,6 +1173,10 @@ def generate_all_scripts(
                 f"— platforms: {', '.join(platforms_done)}"
             )
         except Exception as e:
-            logger.error(f"✗ Failed to generate script for {uid} ({ct.value}): {e}")
+            import traceback as _tb
+            logger.error(
+                f"✗ Failed to generate script for {uid} ({ct.value}): {e}\n"
+                + _tb.format_exc()
+            )
 
     return scripts
