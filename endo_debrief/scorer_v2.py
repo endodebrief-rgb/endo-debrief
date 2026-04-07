@@ -1,16 +1,14 @@
 """
-scorer_v2.py — Scoring unifié pour les 3 types de contenu
+scorer_v2.py — Scoring unifié pour les 4 types de contenu
 
-Remplace scorer.py en gérant Research Articles, Guidelines et Clinical Trials
-dans un scoring commun permettant de sélectionner les 3 meilleures vidéos
-de la semaine, tous types confondus.
+Gère Research Articles, Guidelines, Clinical Trials et Flashbacks dans un
+scoring commun permettant de sélectionner la meilleure vidéo de la semaine
+(1 par semaine), tous types confondus.
 
 Politique de sélection :
-  - Max 2 articles de recherche par semaine (pour ne pas être redondant)
-  - Max 1 guideline par semaine (assez rares pour ne pas saturer)
-  - Max 1 essai clinique par semaine
-  - Au moins 1 article de recherche par semaine (le cœur du concept)
-  - Si pas de guideline ni d'essai notable : 3 articles de recherche
+  - 1 vidéo par semaine — le meilleur item toutes catégories confondues
+  - Max 1 par type (ne peut de toute façon sélectionner qu'1 item)
+  - Articles manuels proposés par Dr Dabi : score forcé à 99, sélection garantie
 """
 
 import json
@@ -23,9 +21,10 @@ from .content_types import ContentItem, ContentType, ScoredContentItem
 
 logger = logging.getLogger(__name__)
 
-# Quotas par type de contenu dans une sélection de 3
+# Quotas par type de contenu dans une sélection de 1
+# (1 vidéo/semaine — le meilleur item toutes catégories)
 CONTENT_TYPE_QUOTAS = {
-    ContentType.RESEARCH_ARTICLE: {"min": 1, "max": 3},
+    ContentType.RESEARCH_ARTICLE: {"min": 0, "max": 1},
     ContentType.GUIDELINE:        {"min": 0, "max": 1},
     ContentType.CLINICAL_TRIAL:   {"min": 0, "max": 1},
     ContentType.FLASHBACK:        {"min": 0, "max": 1},
@@ -267,10 +266,20 @@ def select_top_content(
     return selected[:n]
 
 
-def run_unified_scoring(items: list[ContentItem]) -> list[ScoredContentItem]:
-    """Point d'entrée principal."""
+def run_unified_scoring(
+    items: list[ContentItem],
+    forced_items: list[ContentItem] | None = None,
+) -> list[ScoredContentItem]:
+    """
+    Point d'entrée principal.
+
+    forced_items : articles manuels proposés par Dr Dabi — leur score est forcé
+                   à 99/40 pour garantir leur sélection en tête de liste.
+    """
     if not items:
         raise ValueError("No content items to score")
+
+    forced_uids = {i.uid for i in (forced_items or [])}
 
     logger.info(
         f"Scoring {len(items)} items "
@@ -278,13 +287,23 @@ def run_unified_scoring(items: list[ContentItem]) -> list[ScoredContentItem]:
         f"{sum(1 for i in items if i.content_type == ContentType.GUIDELINE)} guidelines, "
         f"{sum(1 for i in items if i.content_type == ContentType.CLINICAL_TRIAL)} trials)"
     )
+    if forced_uids:
+        logger.info(f"Force-selected UIDs (manual): {forced_uids}")
 
     scored = score_content_items(items)
+
+    # Forcer le score des articles manuels à 99 pour garantir leur sélection
+    for s in scored:
+        if s.item.uid in forced_uids:
+            s.total_score = 99.0
+            logger.info(f"  ↑ Manual override: {s.item.uid} score set to 99")
+
     top = select_top_content(scored)
 
     for i, item in enumerate(top, 1):
+        manual_tag = " [MANUAL]" if item.item.uid in forced_uids else ""
         logger.info(
-            f"#{i} [{item.item.content_type_label}] "
+            f"#{i} [{item.item.content_type_label}]{manual_tag} "
             f"score={item.total_score:.0f}/40 "
             f"topic={item.topic_tag} — {item.item.title[:60]}..."
         )

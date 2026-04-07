@@ -47,13 +47,18 @@ DISCLAIMER = (
     "Always consult your physician."
 )
 
+# ── Articles manuels (proposés par Dr Dabi) ──────────────────────────────────
+# Dépose un fichier JSON ici pour forcer l'inclusion d'un article dans la sélection.
+# Format : [{"pmid": "12345678", "note": "Raison d'inclusion"}, ...]
+MANUAL_ARTICLES_PATH = BASE_DIR / "manual_articles.json"
+
 # ── PubMed search ─────────────────────────────────────────────────────────────
 PUBMED_SEARCH_TERMS = [
     "endometriosis",
 ]
 PUBMED_MAX_RESULTS = 50          # Articles récupérés avant scoring
 PUBMED_DAYS_BACK   = 14          # Fenêtre de recherche (2 semaines pour ne rien rater)
-ARTICLES_PER_WEEK  = 3           # Vidéos à produire
+ARTICLES_PER_WEEK  = 1           # Vidéos à produire par semaine
 
 # ── Modèles OpenAI ────────────────────────────────────────────────────────────
 GPT_MODEL        = "gpt-4o"

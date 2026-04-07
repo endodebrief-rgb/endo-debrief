@@ -119,6 +119,30 @@ def run_generate(week_date: str = "", dry_run: bool = False) -> Path:
     except Exception as e:
         console.print(f"  [yellow]⚠ Flashback search failed: {e}[/]")
 
+    # Source E : Articles manuels proposés par Dr Dabi
+    # Dépose manual_articles.json à la racine du projet pour forcer l'inclusion.
+    manual_items_forced: list[ContentItem] = []
+    if config.MANUAL_ARTICLES_PATH.exists():
+        console.print("  📌 Manual articles (Dr Dabi's picks)...")
+        try:
+            with open(config.MANUAL_ARTICLES_PATH) as _f:
+                manual_list = json.load(_f)
+            manual_pmids = [str(e["pmid"]) for e in manual_list if "pmid" in e]
+            if manual_pmids:
+                from .pubmed import fetch_article_details
+                manual_articles_raw = fetch_article_details(manual_pmids)
+                for _art in manual_articles_raw:
+                    _item = from_pubmed_article(_art)
+                    _item.extra_data["manual_override"] = True
+                    manual_items_forced.append(_item)
+                    all_content_items.insert(0, _item)
+                console.print(
+                    f"  [green]✓[/] {len(manual_articles_raw)} manual article(s) added "
+                    f"(will be force-selected)"
+                )
+        except Exception as _e:
+            console.print(f"  [yellow]⚠ Manual articles loading failed: {_e}[/]")
+
     n_articles  = sum(1 for i in all_content_items if i.content_type == ContentType.RESEARCH_ARTICLE)
     n_guidelines= sum(1 for i in all_content_items if i.content_type == ContentType.GUIDELINE)
     n_trials    = sum(1 for i in all_content_items if i.content_type == ContentType.CLINICAL_TRIAL)
@@ -148,19 +172,22 @@ def run_generate(week_date: str = "", dry_run: bool = False) -> Path:
 
     # ─── Étape 2 : Scoring unifié ────────────────────────────────────────────
     console.print("\n[bold]Step 2/8:[/] Scoring all content (GPT-4o unified scoring)...")
-    top_items = run_unified_scoring(all_content_items)
+    top_items = run_unified_scoring(all_content_items, forced_items=manual_items_forced)
 
-    table = Table(title="Weekly Selection — 3 Videos", show_header=True)
+    n_selected = len(top_items)
+    table = Table(title=f"Weekly Selection — {n_selected} Video(s)", show_header=True)
     table.add_column("Type", style="cyan")
     table.add_column("Source", style="green")
     table.add_column("Score", justify="center")
     table.add_column("Topic", style="yellow")
     table.add_column("Title", max_width=45)
     for item in top_items:
+        is_manual = item.item.extra_data.get("manual_override", False)
+        score_str = "[MANUAL]" if is_manual else f"{item.total_score:.0f}/40"
         table.add_row(
             item.item.type_emoji + " " + item.item.content_type_label,
             item.item.source_name[:25],
-            f"{item.total_score:.0f}/40",
+            score_str,
             item.topic_tag,
             item.item.title[:45] + "...",
         )
@@ -209,7 +236,7 @@ def run_generate(week_date: str = "", dry_run: bool = False) -> Path:
         article_dir = output_dir / f"video_{i+1}_{article_id}"
         article_dir.mkdir(parents=True, exist_ok=True)
 
-        console.rule(f"[dim]Video {i+1}/3 — {article_id}[/]")
+        console.rule(f"[dim]Video {i+1}/{len(top_items)} — {article_id}[/]")
 
         # ─── Étape 5 : Génération des slides ──────────────────────────────
         console.print(f"  [bold]Step 5/8:[/] Generating slides...")

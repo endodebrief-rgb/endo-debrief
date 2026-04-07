@@ -21,7 +21,7 @@ on:
 
 jobs:
   generate:
-    name: Generate 3 videos
+    name: Generate weekly video
     runs-on: ubuntu-latest
     timeout-minutes: 90
 

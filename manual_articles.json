@@ -1,0 +1,6 @@
+[
+  {
+    "_instructions": "Pour proposer un article à inclure cette semaine, ajoute son PMID ci-dessous et supprime cette entrée _instructions. Le pipeline le sélectionnera en priorité absolue, quel que soit son score automatique. Supprime ce fichier (ou vide le tableau) pour revenir à la sélection automatique.",
+    "_example_usage": "Remplace cette entrée par : {\"pmid\": \"12345678\", \"note\": \"Article intéressant sur la douleur chronique\"}"
+  }
+]

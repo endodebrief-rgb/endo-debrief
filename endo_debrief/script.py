@@ -35,11 +35,12 @@ logger = logging.getLogger(__name__)
 class VideoSection:
     """Une section du script vidéo."""
     name: str
-    narration: str       # Texte à lire (voix off)
-    slide_title: str     # Titre affiché sur la slide
+    narration: str            # Texte à lire (voix off)
+    slide_title: str          # Titre affiché sur la slide
     slide_bullets: list[str]  # Points clés affichés
-    visual_prompt: str   # Prompt DALL-E pour l'illustration (si besoin)
-    duration_s: int      # Durée estimée en secondes
+    visual_prompt: str = ""   # Prompt DALL-E (legacy, conservé pour compatibilité)
+    duration_s: int = 20      # Durée estimée en secondes
+    chart_data: Optional[dict] = None  # Données structurées pour le visuel (remplace DALL-E)
 
 
 @dataclass
@@ -72,9 +73,14 @@ class VideoScript:
     # Déclinaisons par plateforme (générées par generate_platform_scripts)
     platform_scripts: dict = None  # {platform: PlatformContent}
 
+    # Métadonnées structurées de l'article (pour les slides intro/methods)
+    article_metadata: Optional[dict] = None  # {study_type, n_patients, journal, authors, doi, year, ...}
+
     def __post_init__(self):
         if self.platform_scripts is None:
             self.platform_scripts = {}
+        if self.article_metadata is None:
+            self.article_metadata = {}
 
     @property
     def full_narration(self) -> str:
@@ -184,6 +190,16 @@ Return a JSON object with this structure:
     "tone_notes": "Nuanced, respects intelligence, methodological critique included"
   }}
 }}
+
+STRICT CONTENT ISOLATION — MANDATORY:
+You are adapting content about ONLY the item described above (UID: {item.uid}).
+Every fact, number, author name, and finding you use MUST come from the YouTube script
+excerpt provided above — nothing else.
+Never add data from other studies, even if you know related research.
+
+DOI RULE: Facebook captions often reference the article. Use ONLY the DOI or URL
+already present in the YouTube script above. If no DOI appears in the script, write
+"[DOI not available]" — NEVER invent or substitute a DOI number.
 
 CRITICAL RULES:
 - All narrations in English only
@@ -359,85 +375,141 @@ ONE-LINE PATIENT SUMMARY (use this as inspiration for the hook):
 CRITICAL REVIEW INSTRUCTIONS:
 {critical_note}
 
-Generate a JSON response with this exact structure:
+Generate a JSON response with this EXACT structure (all fields required):
 
 {{
-  "video_title": "Engaging YouTube title (max 70 chars, includes key finding, uses 'New Study:', 'Researchers Discover:', etc.)",
+  "video_title": "Engaging YouTube title (max 70 chars, includes key finding)",
   "short_title": "TikTok/Reels title (max 40 chars, punchy)",
-  "video_description": "YouTube description (300-400 words): includes what the video covers, key findings, paper reference, disclaimer, and call to action)",
-  "hashtags": ["endometriosis", "endo", "endoresearch", "science", "womenshealth", "endodebrief", "pubmed", ...],
+  "video_description": "YouTube description (300-400 words): what the video covers, key findings, paper reference, disclaimer, call to action. Use the real DOI from above — never invent one.",
+  "hashtags": ["endometriosis", "endo", "endoresearch", "science", "womenshealth", "endodebrief", "pubmed"],
+
+  "article_metadata": {{
+    "study_type": "exact study design, e.g. Randomised Controlled Trial / Retrospective Cohort / Systematic Review",
+    "n_patients": 605,
+    "n_label": "women / patients / participants",
+    "journal_short": "Abbreviated journal name",
+    "year": "2026",
+    "country": "France",
+    "first_author": "Ouafdi",
+    "institution": "institution or city if mentioned",
+    "followup_months": 12,
+    "key_intervention": "What was done / studied (1 short sentence)",
+    "primary_outcome": "Primary endpoint in plain language"
+  }},
 
   "sections": [
     {{
       "name": "HOOK",
-      "narration": "The spoken text (15-20 seconds). Start with a shocking statistic or provocative question. Make the viewer stop scrolling immediately.",
-      "slide_title": "Bold hook statement shown on screen (max 8 words)",
+      "narration": "15-20 seconds. Start with the most striking NUMBER from the results. Not a question — a statement that creates urgency.",
+      "slide_title": "The bold hook stat (max 8 words)",
       "slide_bullets": [],
-      "visual_prompt": "DALL-E prompt for a powerful opening visual (medical, symbolic, emotional)",
+      "chart_data": null,
       "duration_s": 17
     }},
     {{
       "name": "PAPER",
-      "narration": "Introduce the paper: journal, authors, country, year. What kind of study is this?",
-      "slide_title": "Published in [Journal]",
-      "slide_bullets": ["[Journal name] — [Year]", "[Number] of [patients/samples]", "[Country/institution]"],
-      "visual_prompt": "",
+      "narration": "Introduce the paper: journal, first author, country, year, study type, number of patients. Concise and factual.",
+      "slide_title": "The Study",
+      "slide_bullets": ["[First author] et al., [Journal], [Year]", "[Study type] — N=[X] [patients/participants]", "[Institution/country if relevant]"],
+      "chart_data": null,
       "duration_s": 18
     }},
     {{
       "name": "BACKGROUND",
-      "narration": "Why does this research topic matter? What do we already know? What gap does this study fill? Make patients feel seen.",
+      "narration": "Why does this topic matter? What is the current clinical or scientific gap? Make the patient feel seen — this is about their life.",
       "slide_title": "Why this matters",
-      "slide_bullets": ["Key fact 1 about endo", "Key fact 2", "The unanswered question this study addresses"],
-      "visual_prompt": "DALL-E prompt for a medical illustration showing the biological mechanism being studied",
+      "slide_bullets": ["Known fact 1 about the topic (with figure if available)", "Known fact 2", "The unanswered question this study addresses"],
+      "chart_data": null,
       "duration_s": 40
     }},
     {{
       "name": "METHODS",
-      "narration": "Explain the study design in plain English. Who were the participants? What did the researchers actually do? Keep it simple but accurate.",
-      "slide_title": "What they did",
-      "slide_bullets": ["Study design (e.g., 'Randomized controlled trial')", "N = X patients", "Key measurement / intervention"],
-      "visual_prompt": "",
+      "narration": "Plain-English study design. Who? How many? What was done? What was measured? Be precise — patients and clinicians are watching.",
+      "slide_title": "Study Design",
+      "slide_bullets": ["[Study type] — [N] [label]", "[Duration / follow-up]", "[Key eligibility criteria]", "[Primary endpoint]"],
+      "chart_data": {{
+        "type": "study_design",
+        "study_type": "Retrospective cohort",
+        "n": 605,
+        "n_label": "women",
+        "centers": 7,
+        "period": "2019-2020",
+        "followup": "1 year",
+        "primary_outcome": "Major complications (Clavien-Dindo ≥ III)"
+      }},
       "duration_s": 35
     }},
     {{
       "name": "RESULTS",
-      "narration": "Present the key findings with specific numbers. Use comparisons patients can understand. What was statistically significant? What was the effect size?",
-      "slide_title": "Key Findings",
-      "slide_bullets": ["Finding 1 with specific number/percentage", "Finding 2", "Finding 3 (if relevant)"],
-      "visual_prompt": "DALL-E prompt for a clear visual representation of the main result (graph concept, comparison visual)",
+      "narration": "Present findings with EXACT numbers from the abstract. Compare groups clearly. Mention p-values or confidence intervals if reported. What is the clinical magnitude?",
+      "slide_title": "Key Results",
+      "slide_bullets": ["Exact finding 1 with number (%)", "Exact finding 2 with number", "Exact finding 3 (p-value / CI if given)"],
+      "chart_data": {{
+        "type": "stat_cards",
+        "cards": [
+          {{"label": "Primary outcome label", "value": "4.5%", "n": 27, "context": "Clavien-Dindo ≥ III", "color": "primary"}},
+          {{"label": "Most common complication", "value": "digestive fistula", "n": null, "context": "X% incidence", "color": "accent"}},
+          {{"label": "Third key finding", "value": "XX%", "n": null, "context": "brief context", "color": "warning"}}
+        ],
+        "source_quote": "exact sentence from abstract that contains these numbers"
+      }},
       "duration_s": 70
     }},
     {{
       "name": "CRITICAL",
-      "narration": "Now the critical review. What are the study limitations? What biases exist? Is the sample size adequate? Can we generalize the findings? What should patients NOT conclude from this? Be honest and measured.",
-      "slide_title": "⚠️ Critical Review",
-      "slide_bullets": ["Limitation 1: (specific)", "Limitation 2: (specific)", "What this means / doesn't mean"],
-      "visual_prompt": "",
-      "duration_s": 45
+      "narration": "Critical review: methodological limitations, biases, generalizability. IMPORTANT: situate this study relative to at least 1-2 prior landmark studies or meta-analyses you know in this field. What does it add? What does it contradict? What should clinicians and patients NOT conclude? Be intellectually honest.",
+      "slide_title": "Critical Review",
+      "slide_bullets": [
+        "Limitation 1: specific methodological issue",
+        "Limitation 2: bias or generalizability issue",
+        "vs. prior evidence: what this study adds or confirms",
+        "Clinical implication: what changes (or doesn't) in practice"
+      ],
+      "chart_data": {{
+        "type": "comparison",
+        "label_this": "This study",
+        "label_prior": "Prior evidence",
+        "rows": [
+          {{"aspect": "Study design", "this": "retrospective cohort", "prior": "mostly prospective series"}},
+          {{"aspect": "Sample size", "this": "N=605", "prior": "typically N<200"}},
+          {{"aspect": "Key finding", "this": "4.5% major complications", "prior": "range 2-8% in literature"}}
+        ]
+      }},
+      "duration_s": 55
     }},
     {{
       "name": "TAKE_HOME",
-      "narration": "Two take-home messages: one for patients, one for clinicians/researchers. Clear, actionable, honest.",
-      "slide_title": "Take-Home Message",
-      "slide_bullets": ["👩 For patients: [one sentence]", "🔬 For researchers: [one sentence]"],
-      "visual_prompt": "",
+      "narration": "One message for patients. One for clinicians. Actionable, honest, clear.",
+      "slide_title": "Take-Home",
+      "slide_bullets": ["👩 Patients: [concrete, empowering message]", "🔬 Clinicians: [concrete clinical implication]"],
+      "chart_data": null,
       "duration_s": 25
     }},
     {{
       "name": "OUTRO",
-      "narration": "This was Endo Debrief. If this video helped you understand endometriosis research better, share it with someone who needs it. New debrief every week. Subscribe and turn on notifications.",
+      "narration": "This was Endo Debrief. If this helped, share it with someone who needs it. New debrief every week — subscribe and turn on notifications.",
       "slide_title": "Endo Debrief",
       "slide_bullets": ["New episode every week", "Subscribe for more science"],
-      "visual_prompt": "",
+      "chart_data": null,
       "duration_s": 10
     }}
   ],
 
-  "short_script": "A 70-80 second condensed version for TikTok/Instagram Reels. Hook (10s) → Key finding (25s) → Critical note (15s) → Take-home + CTA (15s). Written as continuous narration."
+  "short_script": "70-80 second version for TikTok. Hook stat (10s) → Study in one sentence (10s) → Main finding with number (25s) → Critical note in one sentence (10s) → Take-home + CTA (15s). Continuous narration."
 }}
 
-IMPORTANT:
+STRICT CONTENT ISOLATION — MANDATORY:
+You are writing about ONLY the article described above (PMID: {article.pmid}).
+Do NOT use any data, numbers, author names, statistics, or findings that are not
+explicitly present in the TITLE, ABSTRACT, or FULL TEXT fields above.
+If a specific fact is not in the source material provided, do NOT invent or infer it.
+This rule is absolute — violations destroy scientific credibility.
+
+DOI RULE: Use only the DOI provided above ({article.doi or "[DOI not available]"}).
+NEVER invent or fabricate a DOI. If the DOI field is empty, write "[DOI not available]"
+in the video description and captions — never substitute a made-up number.
+
+ADDITIONAL RULES:
 - Write all narration in English only
 - Be specific with numbers from the abstract
 - Never make up data not in the abstract
@@ -469,7 +541,30 @@ IMPORTANT:
                 slide_bullets=s.get("slide_bullets", []),
                 visual_prompt=s.get("visual_prompt", ""),
                 duration_s=int(s.get("duration_s", 20)),
+                chart_data=s.get("chart_data") or None,
             ))
+
+        # Métadonnées structurées extraites par GPT — enrichies avec les données de l'article
+        gpt_metadata = data.get("article_metadata", {}) or {}
+        article_metadata = {
+            "study_type":       gpt_metadata.get("study_type", ""),
+            "n_patients":       gpt_metadata.get("n_patients", 0),
+            "n_label":          gpt_metadata.get("n_label", "patients"),
+            "journal_short":    gpt_metadata.get("journal_short", article.journal),
+            "year":             gpt_metadata.get("year", article.pub_date[:4] if article.pub_date else ""),
+            "country":          gpt_metadata.get("country", ""),
+            "first_author":     gpt_metadata.get("first_author", article.authors[0] if article.authors else ""),
+            "institution":      gpt_metadata.get("institution", ""),
+            "followup_months":  gpt_metadata.get("followup_months", 0),
+            "key_intervention": gpt_metadata.get("key_intervention", ""),
+            "primary_outcome":  gpt_metadata.get("primary_outcome", ""),
+            # Champs directs depuis l'article
+            "full_title":       article.title,
+            "journal_full":     article.journal,
+            "doi":              article.doi,
+            "authors":          article.authors,
+            "pubmed_url":       article.url,
+        }
 
         return VideoScript(
             article_pmid=article.pmid,
@@ -480,6 +575,7 @@ IMPORTANT:
             sections=sections,
             short_script=data.get("short_script", ""),
             short_title=data.get("short_title", article.title[:40]),
+            article_metadata=article_metadata,
         )
 
     except Exception as e:
@@ -540,7 +636,17 @@ SECTIONS (in order):
 
 Same JSON output format as before (video_title, short_title, video_description, hashtags, sections, short_script).
 
-IMPORTANT:
+STRICT CONTENT ISOLATION — MANDATORY:
+You are writing about ONLY the guideline described above (UID: {item.uid}).
+Do NOT use any data, numbers, author names, statistics, or recommendations that are not
+explicitly present in the TITLE or CONTENT fields above.
+Never use information from any other article, study, or guideline, even if related.
+This rule is absolute — violations destroy scientific credibility.
+
+DOI RULE: NEVER invent or fabricate a DOI or reference number.
+If no DOI is available in the source data, write "[DOI not available]" in captions.
+
+ADDITIONAL RULES:
 - Be very concrete about what patients should DO differently as a result
 - Include specific recommendation grades (Grade A, B, C or GRADE, OXFORD) if mentioned
 - The CHANGES section is the heart of the video — be thorough but accessible
@@ -569,6 +675,7 @@ IMPORTANT:
                 slide_bullets=s.get("slide_bullets", []),
                 visual_prompt=s.get("visual_prompt", ""),
                 duration_s=int(s.get("duration_s", 20)),
+                chart_data=s.get("chart_data") or None,
             )
             for s in data.get("sections", [])
         ]
@@ -677,7 +784,16 @@ SECTIONS (in order):
 
 Same JSON format (video_title, short_title, video_description, hashtags, sections, short_script).
 
-Hashtags should include: endometriosis, clinicaltrial, endoresearch, endowarrior, nctid"""
+STRICT CONTENT ISOLATION — MANDATORY:
+You are writing about ONLY the clinical trial described above (NCT ID: {item.uid}).
+Do NOT use any data, numbers, author names, or findings not explicitly present in the
+TITLE, DESCRIPTION, or other fields above.
+Never use information from any other trial or article.
+
+DOI/NCT RULE: Use only the NCT ID provided above. Never invent registration numbers.
+
+ADDITIONAL RULES:
+- Hashtags should include: endometriosis, clinicaltrial, endoresearch, endowarrior, nctid"""
 
     try:
         response = client.chat.completions.create(
@@ -702,6 +818,7 @@ Hashtags should include: endometriosis, clinicaltrial, endoresearch, endowarrior
                 slide_bullets=s.get("slide_bullets", []),
                 visual_prompt=s.get("visual_prompt", ""),
                 duration_s=int(s.get("duration_s", 20)),
+                chart_data=s.get("chart_data") or None,
             )
             for s in data.get("sections", [])
         ]
@@ -796,7 +913,15 @@ SECTIONS (in order):
 Video title format: "Flashback: [Key finding] — The [Year] Paper That Changed Endometriosis"
 Hashtags should include: endometriosis, endoresearch, endodebrief, sciencehistory, endoflashback
 
-IMPORTANT:
+STRICT CONTENT ISOLATION — MANDATORY:
+You are writing about ONLY the article described above (PMID: {item.uid}).
+Do NOT use any data, numbers, or findings not explicitly present in the
+TITLE, ABSTRACT, or other fields above.
+Never use information from any other paper, even well-known endo studies.
+
+DOI RULE: NEVER invent a DOI. If no DOI is available, write "[DOI not available]" in captions.
+
+ADDITIONAL RULES:
 - Be honest about the historical context — methodology that was standard then may be weak now
 - Show intellectual evolution, not just praise
 - The EVOLUTION section is key — what happened after this paper?
@@ -825,6 +950,7 @@ IMPORTANT:
                 slide_bullets=s.get("slide_bullets", []),
                 visual_prompt=s.get("visual_prompt", ""),
                 duration_s=int(s.get("duration_s", 20)),
+                chart_data=s.get("chart_data") or None,
             )
             for s in data.get("sections", [])
         ]
